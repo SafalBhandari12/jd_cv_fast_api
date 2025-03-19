@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+import torch
 from sentence_transformers import SentenceTransformer, util
 
 app = FastAPI()
@@ -8,9 +9,9 @@ app = FastAPI()
 model = SentenceTransformer("TechWolf/JobBERT-v2")
 
 
-class Texts(BaseModel):
-    text1: str
-    text2: str
+class EmbeddingPair(BaseModel):
+    embedding1: list[float]
+    embedding2: list[float]
 
 
 class TextEmbedding(BaseModel):
@@ -18,17 +19,18 @@ class TextEmbedding(BaseModel):
 
 
 @app.post("/cosine_similarity")
-async def compute_cosine_similarity(texts: Texts):
-    if not texts.text1 or not texts.text2:
+async def compute_cosine_similarity(embeddings: EmbeddingPair):
+    if not embeddings.embedding1 or not embeddings.embedding2:
         raise HTTPException(
-            status_code=400, detail="Both text1 and text2 must be provided."
+            status_code=400, detail="Both embedding1 and embedding2 must be provided."
         )
 
-    # Compute embeddings for both texts
-    embeddings = model.encode([texts.text1, texts.text2], convert_to_tensor=True)
+    # Convert the input lists into torch tensors
+    emb1_tensor = torch.tensor(embeddings.embedding1)
+    emb2_tensor = torch.tensor(embeddings.embedding2)
 
-    # Compute cosine similarity between the two embeddings
-    cosine_sim = util.cos_sim(embeddings[0], embeddings[1])
+    # Directly compute cosine similarity using the sentence-transformers utility
+    cosine_sim = util.cos_sim(emb1_tensor, emb2_tensor)
 
     return {"cosine_similarity": cosine_sim.item()}
 
@@ -38,10 +40,10 @@ async def get_embedding(text_embedding: TextEmbedding):
     if not text_embedding.text:
         raise HTTPException(status_code=400, detail="Text must be provided.")
 
-    # Retrieve the embedding for the provided text
+    # Compute the embedding for the provided text
     embedding = model.encode(text_embedding.text, convert_to_tensor=False)
 
-    # Convert the embedding (a numpy array) to a list for JSON serialization
+    # Convert the embedding to a list for JSON serialization
     embedding_list = embedding.tolist()
 
     return {"embedding": embedding_list}
